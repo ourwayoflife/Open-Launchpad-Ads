@@ -1,0 +1,9 @@
+; $Id: olpads.module,v 1.3.2.0 2011/12/21 17:05:00 ourwayoflife Exp $
+name = Open Launchpad Ads
+description = A module that will manage ads with support for ads stats and taxonomy or tags based ads visibility
+core = 7.x
+version = "7.x-1.0"
+
+dependencies[] = content_taxonomy_autocomplete
+
+stylesheets[all][] = olpads.css

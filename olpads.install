@@ -1,0 +1,188 @@
+<?php
+
+  function olpads_schema() {
+    db_query("SET sql_mode=''");
+    
+    $schema['olpads_ads'] = array (
+      'description' => 'This is the table for storing ads',
+      'primary key' => array('id'),
+      'fields' => array (
+        'id' => array (
+          'description' => 'The ad id of the ad',
+          'type' => 'serial',
+          'not null' => TRUE,
+        ),      
+        'title' => array (
+          'description' => 'The title of the ad',
+          'type' => 'varchar',
+          'length' => 300,
+          'not null' => TRUE
+        ),
+        'adgroup' => array (
+          'description' => 'The ad group this ad belongs to',
+          'type' => 'varchar',
+          'length' => 70,
+          'not null' => TRUE
+        ),
+        'categories' => array (
+          'description' => 'The tags or categories this ad is associated to',
+          'type' => 'text',
+          'not null' => TRUE
+        ),
+        'type' => array (
+          'description' => 'The type of the ad',
+          'type' => 'int',
+          'not null' => TRUE
+        ),
+        'ad' => array (
+          'description' => 'The ad itself',
+          'type' => 'text',
+          'not null' => TRUE
+        ),
+        'alignment' => array (
+          'description' => 'The ad alignment',
+          'type' => 'varchar',
+          'length' => 7,
+          'not null' => TRUE
+        ),        
+        'link' => array (
+          'description' => 'The destination of the ad',
+          'type' => 'varchar',
+          'length' => 500,
+          'not null' => TRUE
+        ),
+        'openwindow' => array (
+          'description' => 'Whether this ad opens in new window or not',
+          'type' => 'int',
+          'not null' => TRUE
+        ),
+        'views' => array (
+          'description' => 'The number of times this ad is viewed',
+          'type' => 'int',          
+        ),
+        'clicks' => array (
+          'description' => 'The number of times this ad is clicked',
+          'type' => 'int',          
+        ),
+        'status' => array (
+          'description' => 'Whether this ad is active or not',
+          'type' => 'int',          
+          'not null' => TRUE
+        )                                                                
+       )
+    );
+
+    return $schema;
+  }
+  
+  function olpads_install() {
+    olpads_setup_category_vocabulary();
+    olpads_add_custom_fields(); 
+  }
+  
+  function olpads_add_custom_fields() {
+    olpads_add_blogpost_category_field();
+  }
+  
+  function olpads_add_blogpost_category_field() {
+    if (!field_info_field('field_category')) {  
+      $field = array(
+        'active' => '1',
+        'cardinality' => '-1',
+        'deleted' => '0',
+        'entity_types' => array(),
+        'field_name' => 'field_category',
+        'foreign keys' => array(
+          'tid' => array(
+            'columns' => array(
+              'tid' => 'tid',
+            ),
+            'table' => 'taxonomy_term_data',
+          ),
+        ),
+        'indexes' => array(
+          'tid' => array(
+            0 => 'tid',
+          ),
+        ),
+        'module' => 'taxonomy',
+        'settings' => array(
+          'allowed_values' => array(
+            0 => array(
+              'vocabulary' => 'category',
+              'parent' => '0',
+            ),
+          ),
+          'options_list_callback' => 'content_taxonomy_allowed_values',
+        ),
+        'translatable' => '0',
+        'type' => 'taxonomy_term_reference',
+      );
+      field_create_field($field); 
+    
+      $instance = array(
+        'bundle' => 'blog_post',
+        'default_value' => NULL,
+        'deleted' => '0',
+        'description' => '',
+        'display' => array(
+          'default' => array(
+            'label' => 'above',
+            'module' => 'taxonomy',
+            'settings' => array(),
+            'type' => 'taxonomy_term_reference_link',
+            'weight' => 1,
+          ),
+          'teaser' => array(
+            'label' => 'above',
+            'settings' => array(),
+            'type' => 'hidden',
+            'weight' => 0,
+          ),
+        ),
+        'entity_type' => 'node',
+        'field_name' => 'field_category',
+        'label' => 'Category',
+        'required' => 0,
+        'settings' => array(
+          'user_register_form' => FALSE,
+        ),
+        'widget' => array(
+          'active' => 0,
+          'module' => 'taxonomy',
+          'settings' => array(
+            'autocomplete_path' => 'taxonomy/autocomplete',
+            'content_taxonomy_autocomplete_new_terms' => 'deny',
+            'size' => 60,
+          ),
+          'type' => 'taxonomy_autocomplete',
+          'weight' => '32',
+        ),
+      ); 
+      field_create_instance($instance);    
+    }
+    else {
+      drupal_set_message(t('Existing Category field is being used.'));    
+    }    
+  }
+  
+  function olpads_setup_category_vocabulary() {
+    if (!taxonomy_vocabulary_machine_name_load(AD_VOCAB_MACHINE_NAME)) { 
+      $vocabulary = new stdClass;
+
+      $vocabulary->name = t('Category');
+      $vocabulary->machine_name = AD_VOCAB_MACHINE_NAME;
+      $vocabulary->description = t('Category for blog posts');
+      $vocabulary->hierarchy = 1;
+      $vocabulary->module = 'olpads';
+      $vocabulary->weight = 0;
+      $vocabulary->rdf_mapping['rdftype'][0] = 'skos:ConceptScheme';
+      $vocabulary->rdf_mapping['name']['predicates'][0] = 'dc:title';
+      $vocabulary->rdf_mapping['description']['predicates'][0] = 'rdfs:comment';
+
+      taxonomy_vocabulary_save($vocabulary);
+    }
+    else {    
+      drupal_set_message(t('Existing Category vocabulary is being used.'));
+    }    
+  }

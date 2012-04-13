@@ -1,0 +1,1014 @@
+<?php
+// $Id: olpads.module,v 1.3.2.0 2011/12/21 17:05:00 ourwayoflife Exp $
+
+  define('AD_TYPE_IMAGE', 0);
+  define('AD_TYPE_FLASH', 1);
+  define('AD_TYPE_CODE', 2);
+  define('AD_NO_GROUP', 'Ungrouped');
+  define('AD_VOCAB_MACHINE_NAME', 'category');
+  
+  function olpads_form_article_node_form_alter(&$form, &$form_state, $form_id) {
+    //print_r($form);die;
+  }
+  
+  function olpads_form_blog_post_node_form_alter(&$form, &$form_state, $form_id) {
+    //print_r($form);die;
+  } 
+  
+  function olpads_menu() {
+    $items = array();
+    
+    $items['admin/content/olpads'] = array(
+      'title' => t('Open Launchpad Ads'),
+      'description' => t('Show All Open Launchpad ads.'),    
+      'page callback' => 'olpads_show_ads',
+      //'page arguments' => array('olpads_show_ads'),
+      'access arguments' => array('access administration pages'),
+      'type' => MENU_LOCAL_TASK,
+    );    
+    
+    $items['admin/content/olpads/newad'] = array(
+      'title' => t('New Open Launchpad Ad'),
+      'description' => t('Creates new Open Launchpad ad.'),    
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('olpads_ad_form'),
+      'access arguments' => array('access administration pages'),
+      'type' => MENU_LOCAL_ACTION,
+    );
+    
+    $items['admin/content/olpads/stats'] = array(
+      'title' => t('Open Launchpad Ad Stats'),
+      'description' => t('View stats of Open Launchpad ad.'),    
+      'page callback' => 'olpads_ad_stats',
+      'page arguments' => array(1),
+      'access arguments' => array('access administration pages'),
+      'type' => MENU_LOCAL_ACTION,
+    );        
+    
+    $items['olpads/%'] = array(
+      'title callback' => 'olpads_ad_page_title',
+      'title arguments' => array(1),
+      'page callback' => 'olpads_view',
+      'page arguments' => array(1),
+      'access arguments' => array('access administration pages'),
+    );    
+    
+    $items['olpads/%/view'] = array(
+      'title' => 'View',
+      'type' => MENU_DEFAULT_LOCAL_TASK,
+      'weight' => -10,
+    );
+    
+    $items['olpads/%/edit'] = array(
+      'title' => t('Edit'),
+      'description' => t('Edit or update Open Launchpad ad.'),    
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('olpads_ad_form', 2, 1),
+      'access arguments' => array('access administration pages'),
+      'type' => MENU_LOCAL_TASK,
+      'context' => MENU_CONTEXT_PAGE | MENU_CONTEXT_INLINE,
+    );
+    
+    $items['olpads/%/delete'] = array(
+      'title' => t('Delete'),
+      'description' => t('Delete Open Launchpad ad.'),    
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('olpads_delete_confirm', 1),
+      'access arguments' => array('access administration pages'),
+      'type' => MENU_CALLBACK,
+      'context' => MENU_CONTEXT_PAGE | MENU_CONTEXT_INLINE,    
+    );
+    
+    $items['olpads/%/run'] = array(
+      'title' => t('Run'),
+      'description' => t('Run Open Launchpad ad.'),    
+      'page callback' => 'olpads_ad_toggle',
+      'page arguments' => array(1,2),
+      'access arguments' => array('access administration pages'),
+      'type' => MENU_CALLBACK,
+      'context' => MENU_CONTEXT_PAGE | MENU_CONTEXT_INLINE,       
+    );
+    
+    $items['olpads/%/stop'] = array(
+      'title' => t('Stop'),
+      'description' => t('Stop Open Launchpad ad.'),    
+      'page callback' => 'olpads_ad_toggle',
+      'page arguments' => array(1,2),
+      'access arguments' => array('access administration pages'),
+      'type' => MENU_CALLBACK,
+      'context' => MENU_CONTEXT_PAGE | MENU_CONTEXT_INLINE,       
+    );    
+    
+    $items['goolp'] = array(
+      'page callback' => 'olpads_go_link',
+      'access arguments' => array('access content'),
+      'type' => MENU_CALLBACK, 
+    );    
+    
+    return $items;
+  }
+  
+  function olpads_view($adId) {
+    $output = olpads_display_ad($adId);
+    return $output;
+  }
+  
+  function olpads_display_ad($adId) {
+    $ad = olpads_ad_load($adId);     
+    $output = '';   
+    switch ($ad->type) {
+      case AD_TYPE_IMAGE:  
+        $img = file_load($ad->ad);         
+        $realImagePath = drupal_realpath($img->uri);         
+        if (file_exists($realImagePath)) {
+          $imgPath = file_create_url($img->uri); 
+          $imgSizeInfo = getimagesize($imgPath);        
+          $imgDimension = $imgSizeInfo[3];        
+          $imgElement = '<img src="' . $imgPath . '" ' . $imgDimension . ' />';        
+          $target = $ad->openwindow ? '_blank' : '';        
+          $output = l($imgElement, 'goolp/' . $ad->id, array('attributes' => array('target' => $target), 'html' => true)); 
+          //$output = l($imgElement, $ad->link, array('html' => true));
+        }
+        else {
+          $output = '<span style="font-weight:bold;color:#FF0000">Cannot display image ad.</span>';
+        }        
+        break;
+        
+      case AD_TYPE_FLASH: 
+        $flashMov = file_load($ad->ad);
+        $realFlashMovPath = drupal_realpath($flashMov->uri);  
+        $flashMovPath = file_create_url($flashMov->uri);
+         
+        if (file_exists($realFlashMovPath)) {
+          $flashMovSizeInfo = getimagesize($flashMovPath);
+          $flashMovDimension = $flashMovSizeInfo[3];
+        
+          if ($ad->link) {
+            global $base_url;
+            $redUrl = '<param value="clickTAG=' . $base_url . '/goolp/' . $ad->id . '" name="flashvars">';
+            //$redUrl = '<param value="clickTAG=' . $ad->link . '" name="flashvars">';
+          }
+
+          $flashElement = '<object classid="clsid:d27cdb6e-ae6d-11cf-96b8-444553540000" codebase="http://download.macromedia.com/pub/shockwave/cabs/flash/swflash.cab#version=6,0,40,0" ' . $flashMovDimension . '>
+            <param name="movie" value="' . $flashMovPath . '" />
+            <param name="quality" value="high" />
+            <param name="bgcolor" value="#ffffff" />' . $redUrl .          
+            '<embed src="' . $flashMovPath . '" quality="high" bgcolor="#ffffff" ' . $flashMovDimension . ' name="" align="" type="application/x-shockwave-flash" pluginspage="http://www.macromedia.com/go/getflashplayer"></embed> 
+            </object>';    
+        
+          $output = $flashElement;
+        }
+        else {
+          $output = '<span style="font-weight:bold;color:#FF0000">Cannot display flash ad.</span>';	
+        }                  
+        break;
+        
+      case AD_TYPE_CODE:
+        $output = $ad->ad;
+        if ($ad->link) {
+          $output = str_replace(trim($ad->link), 'goolp/' . $ad->id, $output);
+        }
+        break;
+    }
+
+    $alignment = '';
+    if (isset($ad->alignment) && $ad->alignment) {
+      $alignment = 'style="text-align:' . $ad->alignment . '"';
+    }
+    
+    $output = '<div ' . $alignment . '>' . $output . '</div>';
+    
+    return $output;
+  }
+  
+  function olpads_ad_page_title($adId) {
+    $ad = olpads_ad_load($adId);
+    return $ad->title;
+  }
+  
+  function olpads_ad_load($adId) {
+    $ad = db_select('olpads_ads')
+    ->fields('olpads_ads')
+    ->condition('id', $adId)
+    ->execute()
+    ->fetch();  
+
+    return $ad;    
+  }
+  
+  function olpads_ad_form($form, &$form_state, $op = null, $adId = null) {       
+    $ad = olpads_ad_load($adId);
+    
+    drupal_set_breadcrumb(_olpads_get_breadcrumbs());
+    
+    if (isset($ad->title) && $ad->title) {
+      drupal_set_title(t('<em>Edit Open Launchpad Ad</em> @title', array('@title' => $ad->title)), PASS_THROUGH);
+    }
+    else {
+      drupal_set_title(t('New Open Launchpad Ad', array()), PASS_THROUGH);
+    } 
+    
+    $form = array();   
+
+    if ($adId && $op) {
+      $form['id']= array(      
+        '#type' => 'value',
+        '#value' => $adId,
+      );
+      
+      $form['oper']= array(      
+        '#type' => 'value',
+        '#value' => $op,
+      );      
+    }
+    
+    $form['title'] = array(
+      '#title' => t('Title'),
+      '#type' => 'textfield',
+      '#default_value' => isset($ad->title) &&  $ad->title ? $ad->title : '',
+      '#required' => true,     
+    );        
+    
+    $form['field_category'] = array(
+      '#type' => 'container',      
+      '#attributes' => array(
+        'class' => array(
+          'field-type-taxonomy-term-reference',
+          'field-name-field-category',
+          'field-widget-taxonomy-autocomplete'
+        )
+      ),
+      '#tree' => 1,
+      '#language' => LANGUAGE_NONE,      
+      '#element_validate' => array('content_taxonomy_autocomplete_validate_deny_new_terms'),
+    );  
+
+    $form['field_category'][LANGUAGE_NONE] = array(
+      '#entity_type' => 'node',
+      '#bundle' => 'blog_post',
+      '#field_name' => 'field_category',
+      '#language' => LANGUAGE_NONE,
+      '#field_parents' => array(),
+      '#columns' => array('tid'),
+      '#title' => 'Category',
+      '#description' => '',
+      '#required' => '',
+      '#delta' => 0,
+      '#type' => 'textfield',
+      '#default_value' => isset($ad->categories) &&  $ad->categories ? $ad->categories : '',
+      '#autocomplete_path' => 'taxonomy/autocomplete/field_category',
+      '#size' => 60,
+      '#maxlength' => 1024,
+      '#element_validate' => array('olpads_prepare_taxonomy_autocomplete_validate', 'taxonomy_autocomplete_validate'),
+      '#after_build' => array('field_form_element_after_build'),
+    );
+    
+    $adGroups = _olpads_get_ad_groups();     
+    if (count($adGroups)) {
+      $adGroups = array_combine($adGroups, $adGroups);
+    }
+    
+    if (count($adGroups)) {    
+      $form['agoption'] = array(
+        '#title' => t('Specify Ad Group'),
+        '#type' => 'radios',
+        '#options' => array('se' => 'Select from existing Ad Groups', 'cr' => 'Create New Ad Group'),
+        '#default_value' => isset($ad->adgroup) &&  $ad->adgroup != AD_NO_GROUP ? 'se' : ''
+      );      
+    
+      $form['adgroup'] = array(
+        '#title' => t('Ad Group'),
+        '#type' => 'select',
+        '#options' => $adGroups,
+        '#default_value' => isset($ad->adgroup) &&  $ad->adgroup != AD_NO_GROUP ? $ad->adgroup : '',
+        '#states' => array(
+          'visible' => array(
+            'input[name="agoption"]' => array('value' => 'se')
+          )
+        )
+      );       
+    }
+    
+    $form['newadgroup'] = array(
+      '#title' => t('Ad Group'),
+      '#type' => 'textfield',
+      '#states' => array(
+        'visible' => array(
+          'input[name="agoption"]' => array('value' => 'cr')
+        )
+      )    
+    );    
+    
+    
+    
+    $form['adtype'] = array(
+      '#title' => t('Ad Type'),
+      '#type' => 'select',
+      '#default_value' => isset($ad->type) ? $ad->type : '',
+      '#options' => array(
+        AD_TYPE_IMAGE => 'Image',
+        AD_TYPE_FLASH => 'Flash',
+        AD_TYPE_CODE => 'Code',
+      )
+    );           
+
+    $form['adimg'] = array(
+      '#title' => t('Ad Banner ') . '<span class="form-required" title="This field is required.">*</span>',
+      '#type' => 'managed_file',
+      '#theme' => 'olpads_managed_file',
+      '#default_value' => isset($ad->ad) &&  $ad->ad && $ad->type == AD_TYPE_IMAGE ? $ad->ad : '',   
+      '#states' => array(
+        'visible' => array(
+          'select[name="adtype"]' => array('value' => (string)AD_TYPE_IMAGE)
+        )
+      ),
+      '#upload_validators' => array(
+        'file_validate_extensions' => array(
+          'png jpg gif jpeg'
+        )
+      ),
+      '#upload_location' => 'public://olpads/images', 
+    );   
+
+    $form['adswf'] = array(
+      '#title' => t('Ad Flash ') . '<span class="form-required" title="This field is required.">*</span>',
+      '#type' => 'managed_file',
+      '#theme' => 'olpads_managed_file',    
+      '#default_value' => isset($ad->ad) &&  $ad->ad && $ad->type == AD_TYPE_FLASH ? $ad->ad : '',  
+      '#states' => array(
+        'visible' => array(
+          'select[name="adtype"]' => array('value' => (string)AD_TYPE_FLASH)
+        )
+      ),
+      '#upload_validators' => array(
+        'file_validate_extensions' => array(
+          'swf'
+        )
+      ),
+      '#upload_location' => 'public://olpads/flash',                
+    );         
+
+    $form['adcode'] = array(
+      '#title' => t('Ad Code ') . '<span class="form-required" title="This field is required.">*</span>',
+      '#type' => 'textarea',
+      '#states' => array(
+        'visible' => array(
+          'select[name="adtype"]' => array('value' => (string)AD_TYPE_CODE)
+        )      
+      ),
+      '#default_value' => isset($ad->ad) &&  $ad->ad && $ad->type == AD_TYPE_CODE ? $ad->ad : '',    
+    );        
+    
+    $form['alignment'] = array(
+      '#title' => t('Alignment'),
+      '#type' => 'select',
+      '#options' => array('left'=>'Left', 'center'=>'Center', 'right'=>'Right'),
+      '#default_value' => isset($ad->alignment) &&  $ad->alignment != AD_NO_GROUP ? $ad->alignment : '',
+      /*'#states' => array(
+        'visible' => array(
+          'select[name="adtype"]' => array('!value' => '1'),
+        )
+      )*/
+    );  
+    
+    $form['adlink'] = array(
+      '#title' => t('Ad Link'),
+      '#type' => 'textfield',
+      '#default_value' => isset($ad->link) &&  $ad->link ? $ad->link : '',
+      '#required' => true,
+    );    
+
+    $form['adwindowopen'] = array(
+      '#title' => t('Open in new window?'),
+      '#type' => 'checkbox',
+      '#default_value' => isset($ad->openwindow) &&  $ad->openwindow ? $ad->openwindow : '',
+    );          
+
+    $form['status'] = array(
+      '#title' => t('Publish?'),
+      '#type' => 'checkbox',
+      '#default_value' => isset($ad->status) ? $ad->status : 1,
+    ); 
+        
+    $form['submit'] = array(
+      '#value' => t('Save Ad'),
+      '#type' => 'submit',
+    );         
+        
+    return $form;
+  }
+  
+  function olpads_ad_form_submit($form, &$form_state) {           
+    $formValues = $form_state['values'];   
+    
+    $ad = array();
+    $ad['title'] = $formValues['title'];
+    
+    if (isset($formValues['agoption']) && $formValues['agoption']) {
+      switch ($formValues['agoption']) {
+        case 'se': 
+          $ad['adgroup'] = $formValues['adgroup']; 
+          break;
+        case 'cr':
+          $ad['adgroup'] = $formValues['newadgroup'] ? $formValues['newadgroup'] : AD_NO_GROUP;
+          break;
+      }
+    }
+    elseif (isset($formValues['newadgroup'])) {
+      $ad['adgroup'] = $formValues['newadgroup'] ? $formValues['newadgroup'] : AD_NO_GROUP;
+    }  
+
+    $rawCategories = $formValues['field_category'][LANGUAGE_NONE]; 
+    $r_categories = array();
+    foreach ($rawCategories as $cat) {
+      array_push($r_categories, $cat['name']);
+    }
+    $categories = implode(', ', $r_categories);
+    
+    $ad['type'] = $formValues['adtype'];
+    $ad['ad'] = 'the ad';
+    $ad['link'] = $formValues['adlink'];
+    $ad['categories'] = $categories;
+    $ad['openwindow'] = $formValues['adwindowopen'];
+    $ad['status'] = $formValues['status'];  
+    $ad['alignment'] = $formValues['alignment'];  
+    
+    switch ($ad['type']) {
+      case AD_TYPE_IMAGE:
+        $ad['ad'] = $formValues['adimg'];
+        break;
+      case AD_TYPE_FLASH:
+        $ad['ad'] = $formValues['adswf'];
+        break;
+      case AD_TYPE_CODE:
+        $ad['ad'] = $formValues['adcode'];
+        break;
+        
+    }
+    
+    if (isset($formValues['id']) && isset($formValues['oper']) && $formValues['id'] && $formValues['oper'] == 'edit') {
+      _olpads_update_ad($ad, $formValues['id']);
+      drupal_set_message(t('Ad %title has been updated.', array('%title' => $ad['title'])));
+    }
+    else {
+      _olpads_save_ad($ad);
+      drupal_set_message(t('Ad %title has been created.', array('%title' => $ad['title'])));      
+    }
+
+    _block_rehash(variable_get('theme_default', 'bartik'));
+  }
+  
+  function olpads_ad_form_validate($form, &$form_state) {
+    $formValues = $form_state['values'];    
+    
+    if (!valid_url($formValues['adlink'], TRUE)) {
+      form_set_error('adlink', t('The ad URL is not valid.'));
+    } 
+
+    switch ($formValues['adtype']) {
+      case AD_TYPE_IMAGE:
+        if (!$formValues['adimg']) {
+          form_set_error('adimg', t('Ad Banner field is required.'));
+        }
+        break;
+      case AD_TYPE_FLASH:
+        if (!$formValues['adswf']) {
+          form_set_error('adswf', t('Ad Flash field is required.'));
+        }
+        break;
+      case AD_TYPE_CODE:
+        if (!$formValues['adcode']) {
+          form_set_error('adcode', t('Ad Code field is required.'));
+        }
+        break;        
+    }    
+  }
+  
+  function _olpads_get_ad_groups($hideNoGroup = true) {
+    $adGroupsQuery = db_select('olpads_ads');
+    $adGroupsQuery->fields('olpads_ads', array('adgroup'));
+    $adGroupsQuery->distinct();
+    
+    if ($hideNoGroup) {
+      $adGroupsQuery->condition('adgroup', AD_NO_GROUP, '!=');
+    }
+    
+    $adGroups = $adGroupsQuery->execute()->fetchCol();  
+    
+    return $adGroups;
+  }
+  
+  function _olpads_save_ad($ad) {   	     
+    $adId = db_insert('olpads_ads')
+      ->fields($ad)
+      ->execute();    
+    
+    $adFile = file_load($ad['ad']);
+    $adFile->status = FILE_STATUS_PERMANENT;
+    file_save($adFile);
+    
+    file_usage_add($adFile, 'olpads', 'olpads_ads', $adId);    
+  }
+  
+  function _olpads_update_ad($ad, $adId) {   
+    db_update('olpads_ads')
+      ->fields($ad)
+      ->condition('id', $adId)
+      ->execute();    
+      
+    $adFile = file_load($ad['ad']);
+    $adFile->status = FILE_STATUS_PERMANENT;
+    file_save($adFile);
+    
+    file_usage_add($adFile, 'olpads', 'olpads_ads', $adId);        
+  }  
+  
+  function olpads_theme() {
+    return array(
+      'olpads_managed_file' => array(
+        'render element' => 'elements'
+      )
+    );  
+  }
+  
+  function theme_olpads_managed_file($variables) { 
+    $element = $variables['elements'];
+    
+    $attributes = array();
+    if (isset($element['#id'])) {
+      $attributes['id'] = $element['#id'];
+    }
+    $attributes['class'] = 'form-managed-file';
+    if (!empty($element['#attributes']['class'])) {
+      $attributes['class'] .= ' ' . implode(' ', $element['#attributes']['class']);
+    }
+    // This wrapper is required to apply JS behaviors and CSS styling.
+    $output = '';
+    $output .= '<div' . drupal_attributes($attributes) . '>';
+    $output .= drupal_render_children($element);
+    $output .= '</div>';
+    return $output;
+  }
+  
+  function olpads_prepare_taxonomy_autocomplete_validate($element, &$form_state) {
+    $form_state['field'][$element['#field_name']][$element['#language']]['field'] = field_info_field($element['#field_name']);  
+  }
+  
+  function olpads_show_ads() {
+    drupal_set_title(t('Manage Open Launchpad Ads', array()), PASS_THROUGH);    
+    
+    $filterForm = drupal_render(drupal_get_form('olpads_ads_filter_form'));
+    
+    $header = array(
+      array(
+        'data' => t('Ad Title'),
+      ),
+      array(
+        'data' => t('Ad Group'),
+      ),
+      /*array(
+        'data' => t('Views'),
+      ),  
+      array(
+        'data' => t('Clicks'),
+      ),   
+      array(
+        'data' => t('CTR'),
+      ),*/                 
+      array(
+        'data' => t('Status'),
+      ),
+      array(
+        'data' => t('Operations'),
+      ),
+    );
+    
+    $filter = array('adgroup' => '', 'adstatus' => '', 'adsperpage' => 35);
+    $filters = variable_get('olpads_filters', FALSE);
+    if ($filters) {
+      $filter = unserialize($filters);
+    }
+  
+    $ads = olpads_get_ads($filter['adgroup'], $filter['adstatus'], $filter['adsperpage']);
+    
+    $rows = array();
+    foreach ($ads as $ad) {        
+      $ctr = 0; 
+      if ($ad->views) {
+        $ctr = ($ad->clicks / $ad->views) * 100;
+      }
+             
+      $rows[] = array(
+        array(
+          'data' => l($ad->title, 'olpads/' . $ad->id, array('html' => FALSE)),
+        ),
+        array(
+          'data' => !empty($ad->adgroup) ? $ad->adgroup : '',
+        ),
+        /*array(
+          'data' => $ad->views ? $ad->views : 0,
+        ), 
+        array(
+          'data' => $ad->clicks ? $ad->clicks : 0,
+        ),    
+        array(
+          'data' => round($ctr, 2) . '%',
+        ),*/               
+        array(
+          'data' => $ad->status ? t('<span class="running">Running</span>') : t('<span class="stopped">Stopped</span>'),
+        ),
+        array(
+          'data' => ($ad->status == 1 ? l(t('Stop'), 'olpads/' . $ad->id . '/stop') . ' &nbsp;&nbsp; ' :
+                    l(t('Run'), 'olpads/' . $ad->id . '/run') . ' &nbsp;&nbsp; ') .
+                    //l(t('Stats'), 'olpads/' . $ad->id . '/stats') . ' &nbsp;&nbsp; ' .
+                    l(t('Edit'), 'olpads/' . $ad->id . '/edit', array('query' => array('destination' => 'admin/content/olpads'))) . ' &nbsp;&nbsp; ' .
+                    l(t('Delete'), 'olpads/' . $ad->id . '/delete', array('query' => array('destination' => 'admin/content/olpads'))),
+        ),
+      );
+    }
+    
+    return $filterForm . theme('table', array('header' => $header, 'rows' => $rows, 'empty' => t('There are no Ads'))) . theme('pager');
+  }
+  
+  /**
+   * Implements hook_admin_paths().
+   */
+  function olpads_admin_paths() {
+    if (variable_get('node_admin_theme')) {
+      $paths = array(
+        'olpads/*/edit' => TRUE,
+        'olpads/*/delete' => TRUE,
+        'olpads/stats' => TRUE,
+        //'olpads/*/revisions/*/revert' => TRUE,
+        //'olpads/*/revisions/*/delete' => TRUE,
+        //'olpads/add' => TRUE,
+        //'olpads/add/*' => TRUE,
+      );
+      return $paths;
+    }
+  }
+  
+  function olpads_ads_filter_form() {
+  $form = array();
+  
+  $adGroups = _olpads_get_ad_groups();     
+  if (count($adGroups)) {
+    $adGroups = array_combine($adGroups, $adGroups);
+  }
+  
+  $adGroups = array('' => t('Show All')) + $adGroups;
+
+  $filter = array('adgroup' => '', 'adstatus' => '', 'adsperpage' => 35);
+  $filters = variable_get('olpads_filters', FALSE);
+  if ($filters) {
+    $filter = unserialize($filters);
+  }
+  
+  $form['ad_filter'] = array(
+    '#type' => 'fieldset',
+  );
+  
+  $form['ad_filter']['css'] = array(
+    '#markup' => '<style>
+      #olpads-ads-filter-form .form-item { float: left; margin-right: 10px; }
+      #olpads-ads-filter-form .form-item .form-submit { margin-top: 20px; }
+      </style>',
+  );
+  
+  $form['ad_filter']['adgroup'] = array(
+    '#type' => 'select',
+    '#title' => t('Ad Group'),
+    '#options' => $adGroups,
+    '#default_value' => $filter['adgroup'],
+  );
+  
+  $statuses = array(
+    '' => t('All'),
+    1 => t('Active'),
+    0 => t('Inactive'),
+  );
+  
+  $form['ad_filter']['adstatus'] = array(
+    '#type' => 'select',
+    '#title' => t('Status'),
+    '#options' => $statuses,
+    '#default_value' => $filter['adstatus'],
+  );
+  
+  $pages = array(
+    5 => 5,
+    10 => 10,
+    25 => 25,
+    35 => 35,
+    45 => 45,
+    75 => 75,
+    100 => 100,
+  );
+  
+  $form['ad_filter']['adsperpage'] = array(
+    '#type' => 'select',
+    '#title' => t('Ads per page'),
+    '#options' => $pages,
+    '#default_value' => $filter['adsperpage'],
+  );
+  
+  $form['ad_filter']['filter'] = array(
+    '#type' => 'submit',
+    '#value' => t('Filter'),
+    '#prefix' => '<div class="form-item">',
+    '#suffix' => '</div>',
+  );
+  
+  return $form;
+}
+
+function olpads_ads_filter_form_submit($form, &$form_state) {
+  $values = $form_state['values'];
+  $filter = array(
+    'adgroup' => $values['adgroup'],
+    'adstatus' => $values['adstatus'],
+    'adsperpage' => $values['adsperpage'],
+  );
+  variable_set('olpads_filters', serialize($filter));
+}
+
+function olpads_get_ads($adGroup = null, $adStatus = null, $adsPerPage = 10) { 
+    $adQuery = db_select('olpads_ads', 'a')->extend('PagerDefault')->limit($adsPerPage);
+    $adQuery->fields('a');
+    
+    if ($adGroup) {
+      $adQuery->condition('a.adgroup', $adGroup);
+    }
+
+    if ($adStatus != '') {
+      $adQuery->condition('a.status', $adStatus);
+    }
+  
+    $results = $adQuery->execute()->fetchAll();
+    
+    return $results;
+}
+
+function olpads_get_ad_to_display($adGroup, $adCat = null) { 
+    $adQuery = db_select('olpads_ads', 'a');
+    $adQuery->fields('a');
+    $adQuery->condition('adgroup', $adGroup);    
+    $adQuery->condition('status', 1);
+    
+    if ($adCat) { 
+      $adQuery->condition('a.categories', '%' . db_like($adCat) . '%', 'LIKE');
+    }    
+    
+    $adQuery->orderRandom();
+    $adQuery->range(0,1);    
+  
+    $results = $adQuery->execute()->fetch();
+    
+    return $results;
+}
+
+function olpads_delete_confirm($form, &$form_state, $adId) {
+  $ad = olpads_ad_load($adId);
+  
+  $form['#ad'] = $ad;
+  $form['id'] = array('#type' => 'value', '#value' => $ad->id);
+  return confirm_form($form,
+    t('Are you sure you want to delete %title?', array('%title' => $ad->title)),
+    'node/' . $ad->id,
+    t('This action cannot be undone.'),
+    t('Delete'),
+    t('Cancel')
+  );
+}
+
+function olpads_delete_confirm_submit($form, &$form_state) {
+  if ($form_state['values']['confirm']) {
+    $ad = olpads_ad_load($form_state['values']['id']);
+    olpads_ad_delete($ad->id);        
+    
+    olpads_refresh_blocks();
+    watchdog('content', '@type: deleted %title.', array('@type' => 'Open Launchpad Ad', '%title' => $ad->title));
+    
+    $adObject = file_load($ad->ad);
+    file_usage_delete($adObject, 'olpads', 'olpads_ads');
+    file_delete($adObject);
+    
+    drupal_set_message(t('@type %title has been deleted.', array('@type' => 'Open Launchpad Ad', '%title' => $ad->title)));
+  }
+
+  $form_state['redirect'] = '<front>';
+}
+
+function olpads_ad_delete($adId) {
+  db_delete('olpads_ads')
+    ->condition('id', $adId)
+    ->execute();      
+}
+
+function olpads_ad_toggle($adId, $op) {
+  $ad = (array)olpads_ad_load($adId);
+  switch ($op) {
+    case 'run':
+      $ad['status'] = 1; 
+      $opDone = 'activated';
+      break;
+    case 'stop':
+      $ad['status'] = 0; 
+      $opDone = 'stopped';
+      break;
+  }
+  _olpads_update_ad($ad, $adId);
+  drupal_set_message(t('@type %title has been %opDone.', array('@type' => 'Open Launchpad Ad', '%title' => $ad['title'], '%opDone' => $opDone)));
+  drupal_goto('admin/content/olpads');
+}
+
+function olpads_ad_stats($adId) {
+  drupal_set_title(t('Open Launchpad Ads Stats', array()), PASS_THROUGH);
+  drupal_set_breadcrumb(_olpads_get_breadcrumbs());
+  
+  $header = array(
+    array(
+      'data' => t('Ad Title'),
+    ),
+    array(
+      'data' => t('Views'),
+    ),
+    array(
+      'data' => t('Clicks'),
+    ),
+    array(
+      'data' => t('CTR'),
+    ),
+  );
+  
+  $ads = olpads_get_ads();
+  
+  $rows = array();
+  foreach ($ads as $ad) {  
+    $views = $ad->views ? $ad->views : 0;
+    $clicks = $ad->clicks ? $ad->clicks : 0;
+    if ($views !== 0) {
+      $ctr = ($clicks / $views) * 100;
+    }
+    else {
+      $ctr = 0;
+    }
+    $ctrTxt = round($ctr, 2) . '%';
+     
+    $rows[] = array(
+      array(
+        'data' => l($ad->title, 'olpads/' . $ad->id, array('html' => FALSE)),
+      ),
+      array(
+        'data' => $views,
+      ),
+      array(
+        'data' => $clicks,
+      ),
+      array(
+        'data' => $ctrTxt
+      ),
+    );
+  }
+    
+  return theme('table', array('header' => $header, 'rows' => $rows, 'empty' => t('There are no Ads'))) . theme('pager');    
+}
+
+function _olpads_get_breadcrumbs() {
+  $breadcrumb = array();
+  $breadcrumb[] = l(t('Home'), NULL);
+  $breadcrumb[] = l(t('Administration'), '/admin');
+  $breadcrumb[] = l(t('Content'), '/admin/content');  
+  $breadcrumb[] = l(t('Open Launchpad Ads'), 'admin/content/olpads');
+  
+  return $breadcrumb;  
+}
+
+function olpads_block_info() {    
+  $adGroups = _olpads_get_ad_groups(false);
+  
+  $blocks = array();  
+  $activeBlocks = array();
+  foreach ($adGroups as $ag) {
+    $delta = str_replace(' ', '_', $ag);
+    array_push($activeBlocks, $delta); 
+    $blocks[$delta] = array(
+      'info' => t('Open Launchpad Ads (' . $ag . ')'),
+      'cache' => DRUPAL_NO_CACHE,
+      'visibility' => BLOCK_VISIBILITY_NOTLISTED,
+      'pages' => 'olpads/*',
+    );
+  }
+  
+  return $blocks;
+}
+
+function olpads_block_view($delta) { 
+  $adGroup = str_replace('_', ' ', $delta);
+  
+  //if ($adGroup == 'Casdf asdf') return;
+  
+  $nodeId = arg(1);
+  $ad = null;
+  if ($nodeId) { 
+    $node = node_load($nodeId);
+    $fieldCategories = isset($node->field_category['und']) ? $node->field_category['und'] : null;    
+    if (count($fieldCategories)) { 
+      $termIds = array();
+      foreach ($fieldCategories as $cat) {
+        array_push($termIds, $cat['tid']);
+      }
+
+      $vocab = taxonomy_vocabulary_machine_name_load(AD_VOCAB_MACHINE_NAME);
+      $tree = taxonomy_get_tree($vocab->vid);      
+      $terms = array();
+      foreach ($tree as $t) {
+        if (in_array($t->tid, $termIds)) {
+          array_push($terms, array('tid' => $t->tid, 'name' => $t->name, 'depth' => $t->depth));
+        }
+      }
+      
+      //start from the bottom terms
+      usort($terms, '_olpads_cmp');    
+
+      foreach ($terms as $t) { 
+        //echo $adGroup;die;         
+        $ad = olpads_get_ad_to_display($adGroup, $t['name']);         
+        if ($ad) {
+          break;
+        }
+      }
+    }    
+  }
+   
+  //if no terms involved, try one more 
+  //time without using any term
+  if (!$ad) { 
+    $ad = olpads_get_ad_to_display($adGroup);    
+  }
+  
+  $block = array();
+  if ($ad) {    
+    $block['content'] = olpads_display_ad($ad->id);
+    olpads_increment_view_count($ad->id);
+  }
+  
+  return $block;
+}
+
+function olpads_refresh_blocks() {
+  $adGroups = _olpads_get_ad_groups(false);
+  $activeBlocks = array();
+  foreach ($adGroups as $ag) {
+    $delta = str_replace(' ', '_', $ag);
+    array_push($activeBlocks, $delta);     
+  }
+  
+  db_delete('block')
+    ->condition('module', 'olpads')
+    ->condition('delta', $activeBlocks, 'NOT IN')
+    ->execute();  
+}
+
+function _olpads_cmp($a, $b) {
+  if ($a['depth'] == $b['depth']) {
+    return 0;
+  }
+  return ($a['depth'] > $b['depth']) ? -1 : 1;  
+}
+
+function olpads_render_ad($ad) {
+  switch ($ad->type) {
+    case AD_TYPE_IMAGE:
+      break;
+      
+    case AD_TYPE_FLASH:
+      break;
+      
+    case AD_TYPE_CODE:
+      break;            
+  }
+}
+
+function olpads_increment_view_count($adId) {
+  db_update('olpads_ads')
+     ->expression('views', 'views + 1')
+    ->condition('id', $adId)
+    ->execute();    
+}
+
+function olpads_increment_click_count($adId) {
+  db_update('olpads_ads')
+   ->expression('clicks', 'clicks + 1')
+  ->condition('id', $adId)
+  ->execute();    
+}
+
+function olpads_go_link($adId) {
+  $ad = olpads_ad_load($adId);
+  if ($ad->link) {
+    olpads_increment_click_count($adId);
+    drupal_goto($ad->link);
+  }
+}
+
